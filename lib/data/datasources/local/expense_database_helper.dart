@@ -189,6 +189,62 @@ class ExpenseDatabaseHelper {
     return weekly;
   }
 
+  /// Lấy dữ liệu chi tiêu theo từng tháng (mặc định 6 tháng gần nhất) phục vụ Trend Line Chart
+  Future<List<MonthlyTrendData>> getMonthlyTrendExpenses([int monthsCount = 6]) async {
+    final db = await database;
+    final now = DateTime.now();
+    final List<MonthlyTrendData> trends = [];
+
+    // Duyệt từ tháng xa nhất đến tháng hiện tại
+    for (int i = monthsCount - 1; i >= 0; i--) {
+      int year = now.year;
+      int month = now.month - i;
+      while (month <= 0) {
+        month += 12;
+        year -= 1;
+      }
+
+      final startOfMonth = DateTime(year, month, 1);
+      final nextMonth = (month == 12) ? DateTime(year + 1, 1, 1) : DateTime(year, month + 1, 1);
+      final endOfMonth = nextMonth.subtract(const Duration(milliseconds: 1));
+
+      final List<Map<String, dynamic>> results = await db.rawQuery('''
+        SELECT SUM($colAmount) as total 
+        FROM $tableTransactions 
+        WHERE $colDate >= ? AND $colDate <= ?
+      ''', [startOfMonth.toIso8601String(), endOfMonth.toIso8601String()]);
+
+      final double total = (results.first['total'] as num?)?.toDouble() ?? 0.0;
+      trends.add(MonthlyTrendData(
+        label: 'T$month',
+        fullLabel: 'Tháng $month/$year',
+        year: year,
+        month: month,
+        amount: total,
+      ));
+    }
+
+    return trends;
+  }
+
+  /// Xóa toàn bộ giao dịch trong Database (dùng cho tính năng Khôi phục Ghi đè)
+  Future<int> deleteAllTransactions() async {
+    final db = await database;
+    return await db.delete(tableTransactions);
+  }
+
+  /// Thêm hàng loạt giao dịch bằng SQLite Batch (tối ưu hóa hiệu năng phục hồi)
+  Future<void> batchInsertTransactions(List<ExpenseTransaction> transactions) async {
+    final db = await database;
+    final batch = db.batch();
+    for (final transaction in transactions) {
+      final map = transaction.toMap();
+      map.remove(colId); // Cho phép SQLite tự động cấp phát ID mới
+      batch.insert(tableTransactions, map);
+    }
+    await batch.commit(noResult: true);
+  }
+
   /// Đóng kết nối Database khi cần
   Future<void> close() async {
     if (_database != null) {
@@ -196,5 +252,22 @@ class ExpenseDatabaseHelper {
       _database = null;
     }
   }
+}
+
+/// Dữ liệu xu hướng chi tiêu theo tháng
+class MonthlyTrendData {
+  final String label; // vd: T5, T6, T10
+  final String fullLabel; // vd: Tháng 10/2026
+  final int year;
+  final int month;
+  final double amount;
+
+  const MonthlyTrendData({
+    required this.label,
+    required this.fullLabel,
+    required this.year,
+    required this.month,
+    required this.amount,
+  });
 }
 

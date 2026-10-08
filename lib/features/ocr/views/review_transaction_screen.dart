@@ -348,6 +348,40 @@ class _ReviewTransactionScreenState extends State<ReviewTransactionScreen> {
                           // Ảnh hóa đơn thu nhỏ kèm chip thông số AI OCR
                           _buildReceiptPreviewCard(context, vm),
 
+                          if (vm.isQrDetected) ...[
+                            const SizedBox(height: 12),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: AppColors.primary.withValues(alpha: 0.4)),
+                              ),
+                              child: const Row(
+                                children: [
+                                  Icon(Icons.qr_code_scanner_rounded, color: AppColors.primary, size: 22),
+                                  SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Nhận diện mã VietQR / Hóa đơn điện tử',
+                                          style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                                        ),
+                                        SizedBox(height: 2),
+                                        Text(
+                                          'Dữ liệu số tiền và cửa hàng được tự động trích xuất từ mã QR.',
+                                          style: TextStyle(color: Colors.white70, fontSize: 11),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+
                           const SizedBox(height: 20),
 
                           const Text(

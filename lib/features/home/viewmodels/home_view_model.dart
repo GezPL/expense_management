@@ -18,6 +18,8 @@ class HomeViewModel extends ChangeNotifier {
 
   double _totalMonthExpense = 0.0;
   double _monthlyBudget = BudgetHelper.defaultBudget;
+  Map<ExpenseCategory, double> _categoryBudgets = {};
+  Map<ExpenseCategory, double> _categoryMonthExpenses = {};
 
   String _searchQuery = '';
   ExpenseCategory? _selectedCategory;
@@ -27,6 +29,8 @@ class HomeViewModel extends ChangeNotifier {
   List<ExpenseTransaction> get transactions => _filteredTransactions;
   double get totalMonthExpense => _totalMonthExpense;
   double get monthlyBudget => _monthlyBudget;
+  Map<ExpenseCategory, double> get categoryBudgets => _categoryBudgets;
+  Map<ExpenseCategory, double> get categoryMonthExpenses => _categoryMonthExpenses;
   String get searchQuery => _searchQuery;
   ExpenseCategory? get selectedCategory => _selectedCategory;
 
@@ -35,23 +39,56 @@ class HomeViewModel extends ChangeNotifier {
 
   bool get isOverBudget => _totalMonthExpense > _monthlyBudget;
 
+  /// Lấy chi tiêu tháng hiện tại của danh mục
+  double getCategoryExpense(ExpenseCategory category) {
+    return _categoryMonthExpenses[category] ?? 0.0;
+  }
+
+  /// Lấy hạn mức ngân sách của danh mục (0.0 nếu chưa thiết lập)
+  double getCategoryBudget(ExpenseCategory category) {
+    return _categoryBudgets[category] ?? 0.0;
+  }
+
+  /// Tính tiến độ chi tiêu theo hạn mức danh mục (0.0 đến 1.0+)
+  double getCategoryProgress(ExpenseCategory category) {
+    final budget = _categoryBudgets[category];
+    if (budget == null || budget <= 0) return 0.0;
+    final expense = _categoryMonthExpenses[category] ?? 0.0;
+    return (expense / budget).clamp(0.0, 2.0);
+  }
+
+  /// Kiểm tra xem danh mục có bị vượt ngân sách không
+  bool isCategoryOverBudget(ExpenseCategory category) {
+    final budget = _categoryBudgets[category];
+    if (budget == null || budget <= 0) return false;
+    final expense = _categoryMonthExpenses[category] ?? 0.0;
+    return expense > budget;
+  }
+
   /// Tải toàn bộ danh sách giao dịch và hạn mức ngân sách
   Future<void> loadDashboardData() async {
     _isLoading = true;
     notifyListeners();
 
     try {
-      // 1. Tải ngân sách tháng
+      // 1. Tải ngân sách tháng & hạn mức từng danh mục
       _monthlyBudget = await BudgetHelper.getMonthlyBudget();
+      _categoryBudgets = await BudgetHelper.getAllCategoryBudgets();
 
       // 2. Tải toàn bộ giao dịch từ SQLite
       _allTransactions = await _dbHelper.getAllTransactions();
 
-      // 3. Tính tổng tiền chi tiêu trong tháng hiện tại
+      // 3. Tính tổng tiền chi tiêu trong tháng hiện tại và chia theo danh mục
       final now = DateTime.now();
-      _totalMonthExpense = _allTransactions.where((t) {
-        return t.date.year == now.year && t.date.month == now.month;
-      }).fold(0.0, (sum, t) => sum + t.amount);
+      _totalMonthExpense = 0.0;
+      _categoryMonthExpenses = {};
+
+      for (final t in _allTransactions) {
+        if (t.date.year == now.year && t.date.month == now.month) {
+          _totalMonthExpense += t.amount;
+          _categoryMonthExpenses[t.category] = (_categoryMonthExpenses[t.category] ?? 0.0) + t.amount;
+        }
+      }
 
       // 4. Áp dụng bộ lọc
       _applyFilter();
@@ -94,11 +131,29 @@ class HomeViewModel extends ChangeNotifier {
     }).toList();
   }
 
-  /// Cập nhật hạn mức ngân sách mới
+  /// Cập nhật hạn mức ngân sách chung tháng mới
   Future<void> updateMonthlyBudget(double newBudget) async {
     if (newBudget <= 0) return;
     await BudgetHelper.setMonthlyBudget(newBudget);
     _monthlyBudget = newBudget;
+    notifyListeners();
+  }
+
+  /// Cập nhật hạn mức cho một danh mục
+  Future<void> updateCategoryBudget(ExpenseCategory category, double amount) async {
+    if (amount <= 0) {
+      await removeCategoryBudget(category);
+      return;
+    }
+    await BudgetHelper.setCategoryBudget(category, amount);
+    _categoryBudgets[category] = amount;
+    notifyListeners();
+  }
+
+  /// Xóa hạn mức cho một danh mục
+  Future<void> removeCategoryBudget(ExpenseCategory category) async {
+    await BudgetHelper.removeCategoryBudget(category);
+    _categoryBudgets.remove(category);
     notifyListeners();
   }
 
@@ -160,4 +215,3 @@ class HomeViewModel extends ChangeNotifier {
     }
   }
 }
-

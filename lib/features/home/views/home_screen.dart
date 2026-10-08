@@ -9,6 +9,8 @@ import '../../analytics/views/expense_analytics_screen.dart';
 import '../../camera/views/camera_screen.dart';
 import '../../ocr/models/expense_category.dart';
 import '../viewmodels/home_view_model.dart';
+import 'backup_restore_dialog.dart';
+import 'budget_settings_dialog.dart';
 import 'manual_expense_entry_screen.dart';
 
 /// Màn hình chính Dashboard: Quản lý ngân sách, Lịch sử chi tiêu, Tìm kiếm và Lọc
@@ -37,84 +39,9 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  /// Hộp thoại cài đặt / điều chỉnh hạn mức ngân sách tháng
-  void _showSetBudgetDialog(BuildContext context) {
-    final controller = TextEditingController(
-      text: NumberFormat('#,###').format(_viewModel.monthlyBudget.toInt()),
-    );
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1E293B),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
-          children: [
-            Icon(Icons.savings_rounded, color: AppColors.primary),
-            SizedBox(width: 8),
-            Text('Hạn mức ngân sách tháng', style: TextStyle(color: Colors.white, fontSize: 17)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Thiết lập số tiền tối đa bạn dự định chi tiêu trong tháng này:',
-              style: TextStyle(color: Colors.white70, fontSize: 13),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: controller,
-              keyboardType: TextInputType.number,
-              autofocus: true,
-              style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-              decoration: InputDecoration(
-                filled: true,
-                fillColor: const Color(0xFF0F172A),
-                suffixText: 'VNĐ',
-                suffixStyle: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
-                ),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Hủy', style: TextStyle(color: Colors.white54)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () {
-              final cleaned = controller.text.replaceAll(RegExp(r'[^\d]'), '');
-              final val = double.tryParse(cleaned);
-              if (val != null && val > 0) {
-                _viewModel.updateMonthlyBudget(val);
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Đã cập nhật hạn mức ngân sách tháng!'),
-                    backgroundColor: AppColors.primary,
-                  ),
-                );
-              }
-            },
-            child: const Text('Lưu'),
-          ),
-        ],
-      ),
-    );
+  /// Hộp thoại cài đặt / điều chỉnh hạn mức ngân sách tháng & từng danh mục
+  void _showSetBudgetDialog(BuildContext context, {int initialTab = 0}) {
+    BudgetSettingsDialog.show(context, _viewModel, initialTab: initialTab);
   }
 
   /// Mở xem chi tiết giao dịch trong Modal BottomSheet
@@ -278,6 +205,11 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: const Icon(Icons.tune_rounded, color: Colors.white70),
               tooltip: 'Cài đặt ngân sách',
               onPressed: () => _showSetBudgetDialog(context),
+            ),
+            IconButton(
+              icon: const Icon(Icons.backup_rounded, color: Colors.white70),
+              tooltip: 'Sao lưu & Phục hồi',
+              onPressed: () => BackupRestoreDialog.show(context, _viewModel),
             ),
           ],
         ),
@@ -508,6 +440,67 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
+
+          // Cảnh báo nếu có danh mục vượt hạn mức
+          Builder(
+            builder: (context) {
+              final overCategories = vm.categoryBudgets.keys.where((c) => vm.isCategoryOverBudget(c)).toList();
+              if (overCategories.isEmpty) {
+                // Hiển thị nút truy cập nhanh hạn mức danh mục nếu chưa có cảnh báo
+                return Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: InkWell(
+                    onTap: () => _showSetBudgetDialog(context, initialTab: 1),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.category_rounded, size: 13, color: AppColors.primary),
+                        const SizedBox(width: 4),
+                        Text(
+                          vm.categoryBudgets.isEmpty
+                              ? 'Thiết lập hạn mức từng danh mục'
+                              : 'Đã đặt ${vm.categoryBudgets.length} hạn mức danh mục',
+                          style: const TextStyle(color: AppColors.primary, fontSize: 11, fontWeight: FontWeight.w600),
+                        ),
+                        const Icon(Icons.chevron_right_rounded, size: 14, color: AppColors.primary),
+                      ],
+                    ),
+                  ),
+                );
+              }
+              return Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: InkWell(
+                  onTap: () => _showSetBudgetDialog(context, initialTab: 1),
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: AppColors.error.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppColors.error.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.warning_amber_rounded, color: AppColors.error, size: 16),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Cảnh báo: ${overCategories.length} mục (${overCategories.map((c) => c.displayName.split(' ').first).join(', ')}) vượt hạn mức!',
+                            style: const TextStyle(color: AppColors.error, fontSize: 11, fontWeight: FontWeight.bold),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const Icon(Icons.chevron_right_rounded, color: AppColors.error, size: 16),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
         ],
       ),
     );
@@ -573,14 +566,37 @@ class _HomeScreenState extends State<HomeScreen> {
           // Các danh mục
           ...ExpenseCategory.values.map((cat) {
             final isSelected = vm.selectedCategory == cat;
+            final isOver = vm.isCategoryOverBudget(cat);
             return Padding(
               padding: const EdgeInsets.only(right: 8),
               child: ChoiceChip(
-                avatar: Icon(cat.icon, size: 16, color: isSelected ? Colors.white : cat.color),
-                label: Text(cat.displayName.split(' ').first), // 'Food', 'Study'...
+                avatar: Icon(
+                  isOver ? Icons.warning_amber_rounded : cat.icon,
+                  size: 16,
+                  color: isSelected
+                      ? Colors.white
+                      : (isOver ? AppColors.error : cat.color),
+                ),
+                label: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(cat.displayName.split(' ').first),
+                    if (isOver) ...[
+                      const SizedBox(width: 4),
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: const BoxDecoration(
+                          color: AppColors.error,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
                 selected: isSelected,
                 onSelected: (_) => vm.setCategoryFilter(isSelected ? null : cat),
-                selectedColor: cat.color,
+                selectedColor: isOver ? AppColors.error : cat.color,
                 backgroundColor: const Color(0xFF1E293B),
                 labelStyle: TextStyle(
                   color: isSelected ? Colors.white : Colors.white70,

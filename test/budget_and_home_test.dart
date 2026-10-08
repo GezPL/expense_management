@@ -22,6 +22,39 @@ void main() {
       final updatedBudget = await BudgetHelper.getMonthlyBudget();
       expect(updatedBudget, 8000000.0);
     });
+
+    test('Cài đặt và lấy hạn mức riêng cho từng danh mục', () async {
+      // Ban đầu chưa có hạn mức
+      final initialFoodBudget = await BudgetHelper.getCategoryBudget(ExpenseCategory.food);
+      expect(initialFoodBudget, isNull);
+
+      // Cài đặt hạn mức cho Food và Study
+      await BudgetHelper.setCategoryBudget(ExpenseCategory.food, 2500000.0);
+      await BudgetHelper.setCategoryBudget(ExpenseCategory.study, 1000000.0);
+
+      final foodBudget = await BudgetHelper.getCategoryBudget(ExpenseCategory.food);
+      final studyBudget = await BudgetHelper.getCategoryBudget(ExpenseCategory.study);
+      final billsBudget = await BudgetHelper.getCategoryBudget(ExpenseCategory.bills);
+
+      expect(foodBudget, 2500000.0);
+      expect(studyBudget, 1000000.0);
+      expect(billsBudget, isNull);
+
+      // Lấy toàn bộ danh mục đã cấu hình
+      final allBudgets = await BudgetHelper.getAllCategoryBudgets();
+      expect(allBudgets.length, 2);
+      expect(allBudgets[ExpenseCategory.food], 2500000.0);
+      expect(allBudgets[ExpenseCategory.study], 1000000.0);
+
+      // Xóa hạn mức danh mục Food
+      await BudgetHelper.removeCategoryBudget(ExpenseCategory.food);
+      final removedFoodBudget = await BudgetHelper.getCategoryBudget(ExpenseCategory.food);
+      expect(removedFoodBudget, isNull);
+
+      final remainingBudgets = await BudgetHelper.getAllCategoryBudgets();
+      expect(remainingBudgets.containsKey(ExpenseCategory.food), isFalse);
+      expect(remainingBudgets.containsKey(ExpenseCategory.study), isTrue);
+    });
   });
 
   group('Home Filter & Budget Logic Tests', () {
@@ -83,6 +116,15 @@ void main() {
       final isOver = overExpense > budget;
       expect(isOver, isTrue);
     });
+
+    test('Tính toán hạn mức danh mục và cảnh báo vượt hạn mức danh mục', () {
+      const foodLimit = 2000000.0;
+      const foodExpense = 2300000.0;
+      final isOverLimit = foodExpense > foodLimit;
+      final progress = foodExpense / foodLimit;
+
+      expect(isOverLimit, isTrue);
+      expect(progress, greaterThan(1.0));
+    });
   });
 }
-

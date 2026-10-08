@@ -4,6 +4,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../data/datasources/local/expense_database_helper.dart';
 import '../../ocr/models/expense_category.dart';
 import '../painters/category_donut_painter.dart';
+import '../painters/monthly_trend_line_painter.dart';
 import '../painters/weekly_bar_painter.dart';
 
 /// Widget Màn hình Thống kê Trực quan hóa Dữ liệu bằng CustomPainter thuần
@@ -27,6 +28,7 @@ class _ExpenseAnalyticsScreenState extends State<ExpenseAnalyticsScreen>
   };
 
   List<double> _weeklyExpenses = List.filled(7, 0.0);
+  List<MonthlyTrendData> _monthlyTrends = [];
 
   // Dữ liệu mẫu minh họa sinh động khi Database chưa có bản ghi (8 danh mục)
   static const Map<String, double> _sampleCategoryTotals = {
@@ -48,6 +50,15 @@ class _ExpenseAnalyticsScreenState extends State<ExpenseAnalyticsScreen>
     190000.0, // T6
     540000.0, // T7
     310000.0, // CN
+  ];
+
+  static const List<MonthlyTrendData> _sampleMonthlyTrends = [
+    MonthlyTrendData(label: 'T5', fullLabel: 'Tháng 5/2026', year: 2026, month: 5, amount: 2400000.0),
+    MonthlyTrendData(label: 'T6', fullLabel: 'Tháng 6/2026', year: 2026, month: 6, amount: 3100000.0),
+    MonthlyTrendData(label: 'T7', fullLabel: 'Tháng 7/2026', year: 2026, month: 7, amount: 1950000.0),
+    MonthlyTrendData(label: 'T8', fullLabel: 'Tháng 8/2026', year: 2026, month: 8, amount: 4200000.0),
+    MonthlyTrendData(label: 'T9', fullLabel: 'Tháng 9/2026', year: 2026, month: 9, amount: 2850000.0),
+    MonthlyTrendData(label: 'T10', fullLabel: 'Tháng 10/2026', year: 2026, month: 10, amount: 2650000.0),
   ];
 
   @override
@@ -81,6 +92,7 @@ class _ExpenseAnalyticsScreenState extends State<ExpenseAnalyticsScreen>
       final db = ExpenseDatabaseHelper.instance;
       final catTotals = await db.getCategoryTotals();
       final weekly = await db.getWeeklyExpenses();
+      final trends = await db.getMonthlyTrendExpenses(6);
 
       final totalExpense = catTotals.values.fold(0.0, (s, v) => s + v);
 
@@ -88,6 +100,7 @@ class _ExpenseAnalyticsScreenState extends State<ExpenseAnalyticsScreen>
         setState(() {
           _categoryTotals = catTotals;
           _weeklyExpenses = weekly;
+          _monthlyTrends = trends;
           // Nếu database chưa có dữ liệu, tự động bật cờ dùng dữ liệu mẫu để demo
           _useSampleData = (totalExpense <= 0);
           _isLoading = false;
@@ -116,6 +129,7 @@ class _ExpenseAnalyticsScreenState extends State<ExpenseAnalyticsScreen>
   Widget build(BuildContext context) {
     final activeCategories = _useSampleData ? _sampleCategoryTotals : _categoryTotals;
     final activeWeekly = _useSampleData ? _sampleWeeklyExpenses : _weeklyExpenses;
+    final activeTrends = _useSampleData ? _sampleMonthlyTrends : _monthlyTrends;
 
     final double totalAmount = activeCategories.values.fold(0.0, (s, v) => s + v);
     final int todayIndex = (DateTime.now().weekday - 1).clamp(0, 6);
@@ -199,6 +213,15 @@ class _ExpenseAnalyticsScreenState extends State<ExpenseAnalyticsScreen>
                     _buildSectionHeader('CHI TIÊU THEO TUẦN NÀY', Icons.bar_chart_rounded),
                     const SizedBox(height: 12),
                     _buildWeeklyBarChartCard(activeWeekly, todayIndex),
+
+                    const SizedBox(height: 24),
+
+                    // ==========================================
+                    // BIỂU ĐỒ 3: MONTHLY TREND LINE CHART (CUSTOMPAINTER)
+                    // ==========================================
+                    _buildSectionHeader('XU HƯỚNG CHI TIÊU 6 THÁNG GẦN NHẤT', Icons.show_chart_rounded),
+                    const SizedBox(height: 12),
+                    _buildTrendLineChartCard(activeTrends),
 
                     const SizedBox(height: 28),
                   ],
@@ -400,6 +423,90 @@ class _ExpenseAnalyticsScreenState extends State<ExpenseAnalyticsScreen>
                 style: TextStyle(color: Colors.white38, fontSize: 11),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Card chứa Biểu đồ đường Animated Monthly Trend Line Chart
+  Widget _buildTrendLineChartCard(List<MonthlyTrendData> trends) {
+    final double total6Months = trends.fold(0.0, (s, e) => s + e.amount);
+    final double avgMonth = trends.isNotEmpty ? total6Months / trends.length : 0.0;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Tổng chi 6 tháng',
+                    style: TextStyle(color: Colors.white38, fontSize: 12),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${NumberFormat('#,###').format(total6Months.toInt())} đ',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  const Text(
+                    'Trung bình / tháng',
+                    style: TextStyle(color: Colors.white38, fontSize: 12),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${NumberFormat('#,###').format(avgMonth.toInt())} đ',
+                    style: const TextStyle(
+                      color: AppColors.primary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            height: 190,
+            width: double.infinity,
+            child: AnimatedBuilder(
+              animation: _animation,
+              builder: (context, child) {
+                return CustomPaint(
+                  painter: MonthlyTrendLinePainter(
+                    trendData: trends,
+                    animationValue: _animation.value,
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Center(
+            child: Text(
+              'Đường cong thể hiện biến động tài chính theo các tháng',
+              style: TextStyle(color: Colors.white38, fontSize: 11),
+            ),
           ),
         ],
       ),

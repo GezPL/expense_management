@@ -5,20 +5,28 @@ import '../../../data/datasources/local/expense_database_helper.dart';
 import '../../../data/models/expense_transaction.dart';
 import '../models/expense_category.dart';
 import '../services/ocr_service.dart';
+import '../services/qr_scanner_service.dart';
 import '../services/receipt_parser.dart';
+import '../services/viet_qr_parser.dart';
 
 /// ViewModel quản lý dữ liệu và tương tác của màn hình ReviewTransactionScreen (MVVM)
 class ReviewTransactionViewModel extends ChangeNotifier {
   final OcrService _ocrService;
+  final QrScannerService _qrScannerService;
 
-  ReviewTransactionViewModel({OcrService? ocrService})
-      : _ocrService = ocrService ?? OcrService();
+  ReviewTransactionViewModel({
+    OcrService? ocrService,
+    QrScannerService? qrScannerService,
+  })  : _ocrService = ocrService ?? OcrService(),
+        _qrScannerService = qrScannerService ?? QrScannerService();
 
   bool _isProcessing = false;
   String? _errorMessage;
   int _ocrDurationMs = 0;
   String _rawText = '';
   String? _imagePath;
+  bool _isQrDetected = false;
+  String? _qrPayload;
 
   // Controllers cho các TextFormField
   final TextEditingController merchantController = TextEditingController();
@@ -36,18 +44,51 @@ class ReviewTransactionViewModel extends ChangeNotifier {
   String? get imagePath => _imagePath;
   DateTime get selectedDate => _selectedDate;
   ExpenseCategory get selectedCategory => _selectedCategory;
+  bool get isQrDetected => _isQrDetected;
+  String? get qrPayload => _qrPayload;
 
   String get formattedDate => DateFormat('dd/MM/yyyy').format(_selectedDate);
 
-  /// Khởi tạo và kích hoạt quy trình OCR + Regex Parsing tự động từ đường dẫn file ảnh
+  /// Khởi tạo và kích hoạt quy trình Quét mã QR hoặc OCR + Regex Parsing tự động từ đường dẫn file ảnh
   Future<void> processReceiptImage(String imagePath) async {
     _imagePath = imagePath;
     _isProcessing = true;
     _errorMessage = null;
+    _isQrDetected = false;
+    _qrPayload = null;
     notifyListeners();
 
     try {
-      // 1. Chạy Google ML Kit OCR on-device
+      // 1. Bước A: Kiểm tra xem ảnh có chứa mã VietQR / Hóa đơn điện tử không
+      VietQrScanResult? qrResult;
+      try {
+        qrResult = await _qrScannerService.scanImageForQr(imagePath);
+      } catch (e) {
+        debugPrint('Bỏ qua lỗi quét QR: $e');
+      }
+
+      // Nếu phát hiện mã VietQR / Hóa đơn điện tử hợp lệ
+      if (qrResult != null && qrResult.isValid) {
+        _isQrDetected = true;
+        _qrPayload = qrResult.rawPayload;
+        _ocrDurationMs = 120; // Phản hồi tức thì từ barcode engine
+
+        merchantController.text = qrResult.merchantName ?? 'Thanh toán VietQR';
+        if (qrResult.amount != null && qrResult.amount! > 0) {
+          amountController.text = _formatNumber(qrResult.amount!);
+        }
+
+        _selectedCategory = qrResult.category;
+        _rawText = 'Mã QR đã nhận diện:\n${qrResult.rawPayload}\n\n'
+            '${qrResult.note != null ? "Nội dung: ${qrResult.note}\n" : ""}'
+            '${qrResult.billNumber != null ? "Số HĐ: ${qrResult.billNumber}\n" : ""}';
+
+        _isProcessing = false;
+        notifyListeners();
+        return;
+      }
+
+      // 2. Bước B: Nếu không có mã QR, chạy Google ML Kit OCR on-device nhận diện chữ
       final ocrResult = await _ocrService.processImage(imagePath);
 
       if (!ocrResult.isSuccess) {
@@ -60,17 +101,17 @@ class ReviewTransactionViewModel extends ChangeNotifier {
       _rawText = ocrResult.rawText;
       _ocrDurationMs = ocrResult.durationMs;
 
-      // 2. Chạy Regex Heuristics Engine để bóc tách 3 trường thông tin
+      // 3. Chạy Regex Heuristics Engine để bóc tách thông tin hóa đơn giấy
       final parsedReceipt = ReceiptParser.parse(
         rawText: ocrResult.rawText,
         recognizedText: ocrResult.recognizedText,
         ocrDurationMs: ocrResult.durationMs,
       );
 
-      // 3. Điền sẵn dữ liệu AI vừa trích xuất vào các Controllers
+      // 4. Điền sẵn dữ liệu AI vừa trích xuất vào các Controllers
       merchantController.text = parsedReceipt.merchantName;
       amountController.text = _formatNumber(parsedReceipt.totalAmount);
-      
+
       final now = DateTime.now();
       _selectedDate = parsedReceipt.transactionDate.isAfter(now)
           ? now
@@ -115,6 +156,7 @@ class ReviewTransactionViewModel extends ChangeNotifier {
       'imagePath': _imagePath,
       'rawText': _rawText,
       'ocrDurationMs': _ocrDurationMs,
+      'isQrDetected': _isQrDetected,
     };
   }
 
@@ -172,6 +214,7 @@ class ReviewTransactionViewModel extends ChangeNotifier {
     merchantController.dispose();
     amountController.dispose();
     _ocrService.dispose();
+    _qrScannerService.dispose();
     super.dispose();
   }
 }

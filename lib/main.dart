@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'core/constants/app_colors.dart';
+import 'core/services/notification_service.dart';
 import 'features/home/views/home_screen.dart';
 
 void main() async {
   // Đảm bảo Flutter binding được khởi tạo trước khi gọi native camera API
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Khởi tạo dịch vụ thông báo nhắc nhở chi tiêu ngoại tuyến
+  await NotificationService.instance.initialize();
 
   // Khóa hướng màn hình theo chiều dọc (Portrait) để chụp hóa đơn chuẩn xác nhất
   await SystemChrome.setPreferredOrientations([
